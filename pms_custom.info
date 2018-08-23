@@ -1,0 +1,5 @@
+name = PMS custom
+description = Manage all alters for private messages module.
+core = 7.x
+package = BYDEV
+version = 7.x-1.0

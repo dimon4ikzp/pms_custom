@@ -1,0 +1,10 @@
+<?php
+
+/**
+ * Implements hook_install().
+ */
+function pms_custom_install() {
+    variable_set('privatemsg_favorite_tag', 3);
+    variable_set('privatemsg_filter_inbox_tag', 5);
+
+}

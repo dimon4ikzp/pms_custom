@@ -1,0 +1,915 @@
+<?php
+
+/**
+ * Implement hook_menu_alter().
+ */
+function pms_custom_menu_alter(&$items) {
+    unset($items['messages']);
+    unset($items['messages/new']);
+    unset($items['messages/list']);
+    unset($items['user/%/messages']);
+
+    if (variable_get('privatemsg_filter_default_list', 0) == 0) {
+        $arg = 'inbox';
+    } else {
+        $arg = 'list';
+    }
+
+    $items['user/%user/inbox']['page arguments'] = array(1, $arg, 'event');
+    $items['user/%user/inbox']['page callback'] = 'pms_custom_inbox_callback';
+    unset($items['user/%user/inbox']['file']);
+    unset($items['user/%user/inbox']['file path']);
+
+    //unset($items['user/%user/inbox']);
+}
+
+/**
+ * Implements hook_menu().
+ */
+function pms_custom_menu(){
+    $items['pms/archive/nojs/%'] = array(
+        'page callback' => 'pms_custom_pmsg_entry_delete',
+        'page arguments' => array(2, 3),
+        //'access arguments' => array('access administration pages'),
+        'access callback'  => 'privatemsg_user_access',
+        'access arguments' => array('tag private messages'),
+        'type' => MENU_CALLBACK,
+    );
+    $items['pms/archive/ajax/%'] = array(
+            'delivery callback' => 'ajax_deliver',
+        ) + $items['pms/archive/nojs/%'];
+
+    $items['pms/favorite/nojs/%'] = array(
+        'page callback' => 'pms_custom_pmsg_entry_favorite',
+        'page arguments' => array(2, 3),
+        //'access arguments' => array('access administration pages'),
+        'access callback'  => 'privatemsg_user_access',
+        'access arguments' => array('tag private messages'),
+        'type' => MENU_CALLBACK,
+    );
+    $items['pms/favorite/ajax/%'] = array(
+            'delivery callback' => 'ajax_deliver',
+        ) + $items['pms/favorite/nojs/%'];
+
+    $items['user/%user/inbox/%argument/%tab'] = array(
+        'title' => 'Unread messages',
+        'page callback' => 'pms_custom_inbox_callback',
+        'page arguments' => array(1, 3, 4),
+        'access callback' => 'privatemsg_user_access',
+        'type' => MENU_LOCAL_TASK
+    );
+
+    return $items;
+}
+
+/**
+ * Just need to pass variables through load functon to prevent notices
+ * @param $argument
+ * @return mixed
+ */
+function pms_custom_argument_load($argument){
+    return $argument;
+}
+
+/**
+ * Just need to pass variables through load functon to prevent notices
+ * @param $argument
+ * @return mixed
+ */
+function pms_custom_tab_load($tab){
+    return $tab;
+}
+
+/**
+ * Menu callback item
+ * @param $account
+ * @param $argument
+ * @param $tab
+ * @return array
+ */
+function pms_custom_inbox_callback($account, $argument, $tab/* = 'event'*/) {
+    $account->tab = $tab;
+    return drupal_get_form('pms_custom_list_form', $argument, $account);
+}
+
+function pms_custom_list_form($form, &$form_state, $argument, $account) {
+    $tab = &$account->tab;
+
+    $module_path = drupal_get_path('module', 'pms_custom');
+
+    $form = array(
+        '#list_argument' => $argument,
+        '#list_tab' => $tab,
+        '#prefix' => '<div id="pmsg-wrapper">',
+        '#suffix' => '</div>',
+        '#attributes' => array('class' => array('pmsg-form'))
+    );
+
+    $form['#attached'] = array(
+        'js' => array($module_path . '/js/pms_custom.js'),
+        'css' => array($module_path. '/css/pms.css'),
+    );
+
+    // Make sure Drupal Ajax framework javascript is around
+    drupal_add_library('system', 'drupal.ajax');
+
+    $form['before_tabs'] = array(
+        '#type' => 'select',
+        '#weight' => -3,
+        '#options' => array(
+            'inbox' => t('All messages'),
+            'unread' => t('Unread'),
+            'favorite' => t('Favorite'),
+            'archive' => t('Archive'),
+        ),
+        '#attributes' => array('class' => array('before-tabs')),
+        '#default_value' => $form['#list_argument'],
+        '#ajax' => array(
+            'event' => 'change',
+            'callback' => 'pms_custom_list_js',
+            'wrapper' => 'pmsg-wrapper',
+            'effect' => 'fade',
+        ),
+        '#submit' => array('pms_custom_filter_messages'),
+        '#executes_submit_callback' => TRUE,
+    );
+
+    $count_query = db_query("SELECT node_type.type, count(node.nid) as node_count FROM node inner join node_type on node.type = node_type.type where node.uid = :uid group by node_type.type", array(':uid' => $account->uid));
+    $count_by_types = $count_query->fetchAllAssoc('type',PDO::FETCH_ASSOC);
+
+    $build_tabs = array();
+
+    if (!empty($count_by_types['event'])) {
+        $build_tabs['event'] = array(
+            '#type' => 'button',
+            '#name' => 'event',
+            '#value'    => t('Traveling'),
+            '#submit' => array('pms_custom_filter_messages'),
+            '#executes_submit_callback' => TRUE,
+            '#ajax' => array(
+                'callback' => 'pms_custom_list_js',
+                'wrapper' => 'pmsg-wrapper',
+                'effect' => 'fade',
+            ),
+        );
+    }
+
+    if (!empty($count_by_types['homestead'])) {
+        $build_tabs['homestead'] = array(
+            '#type' => 'button',
+            '#value' => t('Hosting'),
+            '#name' => 'homestead',
+            '#submit' => array('pms_custom_filter_messages'),
+            '#executes_submit_callback' => TRUE,
+            '#ajax' => array(
+                'callback' => 'pms_custom_list_js',
+                'wrapper' => 'pmsg-wrapper',
+                'effect' => 'fade',
+            ),
+        );
+    }
+
+    $form['content'] = array(
+        '#type' => 'container',
+        '#weight' => -1,
+        '#theme' => array('pms_messages_list'),
+    );
+
+    if (count($build_tabs) == 2) {
+        $form['tabs'] = array(
+            '#type' => 'container',
+            '#weight' => -2,
+            '#attributes' => array('class' => array('msg-tabs-container')),
+        );
+        $build_tabs[$tab]['#attributes']['class'] = array('active');
+        $form['tabs'] += $build_tabs;
+    } elseif (count($build_tabs) == 1) {
+        //tab  set active
+        $tab = key($build_tabs);
+        $form['content']['#attributes']['class'] = array('without-tabs');
+    } else {
+        $form['content']['#attributes']['class'] = array('without-tabs');
+        unset($build_tabs);
+    }
+
+
+    // If this is an AJAX request, update $_GET['q'] so that table sorting and
+    // similar links are using the correct base path.
+    if ($_GET['q'] == 'system/ajax') {
+        $q = 'user/'.$account->uid.'/inbox';
+        if (!empty($argument)) {
+            $q .= '/' . $argument;
+        }
+
+        if (!empty($tab)) {
+            $q .= '/' . $tab;
+        }
+        $_GET['q'] = $q;
+    }
+
+
+    $query = _privatemsg_assemble_query('list', $account, $argument);
+
+    foreach ($query->execute() as $item) {
+        $query_last_message = privatemsg_sql_messages($item->thread_id);
+        $query_last_message->orderBy('pm.timestamp', 'DESC')
+            ->range(0, 1);
+        $message_id = $query_last_message->execute()->fetchField();
+
+        $message = privatemsg_message_load($message_id);
+
+        if (!empty($message)) {
+            if ($account->uid == $message->author->uid) {
+                //if ($user->uid == $message->author->uid) {
+                $uids = _privatemsg_load_thread_participants($item->thread_id, $account,TRUE, 'write');
+                $uid = array_pop($uids)->uid;
+            } else {
+                $uid = $message->author->uid;
+            }
+
+            $query = _privatemsg_assemble_query(array('tags', 'privatemsg_filter'), $account, array($item->thread_id));
+            $tags = $query->execute()->fetchCol(1);
+            $form['content']['#rows'][$item->thread_id] = (array)$item;
+
+            $row = array();
+            $row['avatar'] = pms_custom_get_user_ava($account);
+            $row['uid'] = $uid;
+            $row['name'] = $account->field_user_first_name['und'][0]['value'];
+            $row['tags'] = implode(', ', $tags);
+            $row['tags'] = '';
+            $row['last_updated'] = format_date($item->last_updated, 'custom', 'H:i, d F Y');
+            $row['thread'] = $item->thread_id;
+            $row['is_new'] = $item->is_new;
+            $row['message_body'] = truncate_utf8($message->body, 160, TRUE, TRUE);
+            $row['message_subject'] = $message->subject;
+
+            $fav_classes = array('use-ajax use-ajax-confirm icon-heart');
+
+
+            $get_destination = drupal_get_destination();
+
+            if ($form['#list_argument'] != 'archive') {
+                if (in_array('Favorite', $tags)) {
+                    $fav_title = t('In Favorites');
+                } else {
+                    $fav_title = t('To Favorites');
+                    $fav_classes[] = 's-empty-heart';
+                }
+
+                $options_favorite = array(
+                    'html' => TRUE,
+                    'attributes' => array('class' => $fav_classes),
+                    'query' => array(
+                            'tok' => drupal_get_token('favorite_message' . $item->thread_id),
+                        ) + $get_destination
+                );
+
+                $row['favorite'] = l('<div>'.$fav_title.'</div>', 'pms/favorite/nojs/' . $item->thread_id, $options_favorite);
+
+                $options_archive = array(
+                    'html' => TRUE,
+                    'attributes' => array(
+                        'class' => 'use-ajax use-ajax-confirm icon-trash',
+                    ),
+                    'query' => array(
+                            'tok' => drupal_get_token('archive_message' . $item->thread_id),
+                        ) + $get_destination
+                );
+
+                $row['archive'] = l('<div>'.t('Archive').'</div>', 'pms/archive/nojs/' . $item->thread_id, $options_archive);
+
+            } else {
+                $options_archive = array(
+                    'html' => TRUE,
+                    'attributes' => array(
+                        'class' => 'use-ajax use-ajax-confirm',
+                    ),
+                    'query' => array(
+                            'tok' => drupal_get_token('archive_message' . $item->thread_id),
+                        ) + $get_destination
+                );
+                $row['archive'] = l('<div>'.t('Restore').'</div>', 'pms/archive/nojs/' . $item->thread_id, $options_archive);
+
+            }
+            $form['content']['#rows'][$item->thread_id] = array_merge($form['content']['#rows'][$item->thread_id], $row);
+
+        }
+    }
+
+    if (!empty($form['content']['#rows'])) {
+        // Load the last reply that is not from the current user.
+        $result = db_query('SELECT pmi.thread_id, MAX(pm.mid) AS last_message FROM {pm_message} pm INNER JOIN {pm_index} pmi ON pm.mid = pmi.mid WHERE pmi.thread_id IN (:thread_ids) AND pm.author <> :current_uid GROUP BY pmi.thread_id', array(':current_uid' => $account->uid, ':thread_ids' => array_keys($form['content']['#rows'])));
+        foreach ($result as $row) {
+            // Set replied flag if there is no newer message from another user than
+            // the last replied.
+            if ($row->last_message <= $form['content']['#rows'][$row->thread_id]['last_reply_to_mid']) {
+                $form['content']['#rows'][$row->thread_id]['is_replied'] = TRUE;
+            }
+        }
+    }
+
+    // Save the currently active account, used for actions.
+    $form['account'] = array('#type' => 'value', '#value' => $account);
+
+    $form['pager'] = array('#markup' => theme('pager'), '#weight' => 20);
+
+    //$form['before_tabs']['#options'][$form['#list_argument']] .= '('.count($form['tabs']['traveling']['#rows']).')';
+
+
+    //dsm($form);
+    return $form;
+}
+
+/**
+ * Implements hook_query_privatemsg_list_alter
+ * @param $query
+ */
+function pms_custom_query_privatemsg_list_alter($query) {
+    $count_query = $query->getCountQuery();
+    $argument = $query->getMetaData('arg_2');
+    $account = $query->getMetaData('arg_1');
+
+    if (empty($account->tab)) {
+        $account->tab = 'event';
+    }
+
+    if ($argument === 'archive') {
+        $tag = (int)variable_get('privatemsg_filter_inbox_tag');
+        //dsm($tag);
+        $alias = $query->leftjoin('pm_tags_index', 'pmti', "%alias.thread_id = pmi.thread_id AND %alias.uid = pmi.recipient AND pmi.type IN ('user', 'hidden')");
+
+        $db_or = db_or();
+        $db_or->isNull("pmti.thread_id");
+        $db_or->condition('pmti.tag_id', $tag , '<>');
+        $query->condition($db_or);
+
+        $count_query->leftjoin('pm_tags_index', 'pmti', "%alias.thread_id = pmi.thread_id AND %alias.uid = pmi.recipient AND pmi.type IN ('user', 'hidden')");
+        $count_query->condition($db_or);
+    }
+    if ($argument === 'favorite') {
+        $tag = (int)variable_get('privatemsg_favorite_tag');
+
+        $alias = $query->leftjoin('pm_tags_index', 'pmti', "%alias.thread_id = pmi.thread_id AND %alias.uid = pmi.recipient AND pmi.type IN ('user', 'hidden')");
+        $query->condition('pmti.tag_id', $tag);
+
+        $count_query->leftjoin('pm_tags_index', 'pmti', "%alias.thread_id = pmi.thread_id AND %alias.uid = pmi.recipient AND pmi.type IN ('user', 'hidden')");
+        $count_query->condition('pmti.tag_id', $tag);
+    }
+    //DELETE FROM `pm_tags_index` where tag_id = 2
+
+    if ($argument === 'unread') {
+        $alias = $query->leftjoin('pm_tags_index', 'pmti', "%alias.thread_id = pmi.thread_id AND %alias.uid = pmi.recipient AND pmi.type IN ('user', 'hidden')");
+        $tag = (int)variable_get('privatemsg_filter_inbox_tag');
+        $query->condition('pmti.tag_id', $tag , '=');
+        $query->condition('pmi.is_new', 1);
+
+        $count_query->leftjoin('pm_tags_index', 'pmti', "%alias.thread_id = pmi.thread_id AND %alias.uid = pmi.recipient AND pmi.type IN ('user', 'hidden')");
+        $count_query->condition('pmti.tag_id', $tag , '=');
+        $count_query->condition('pmi.is_new', 1);
+        $query->setCountQuery($count_query);
+    }
+
+    $query->leftjoin('dev_enquire', 'e', "e.thread = pmi.thread_id");
+    $query->leftjoin('node', 'n', "n.nid = e.nid");
+
+    $count_query->leftjoin('dev_enquire', 'e', "e.thread = pmi.thread_id");
+    $count_query->leftjoin('node', 'n', "n.nid = e.nid");
+
+    $query->condition('n.type', $account->tab);
+    $count_query->condition('n.type', $account->tab);
+    //dsm($account->tab, 'tab');
+
+    //dsm($query->__toString());
+}
+
+
+/**
+ * Expose operations/actions which can be executed on threads.
+ *
+ * Return an array of operations to privatemsg, the key of each operation is the
+ * operation key or name.
+ *
+ */
+function pms_custom_privatemsg_thread_operations() {
+    return array(
+        'favorite' => array(
+            'label' => t('Favorite'),
+            'callback' => 'pms_custom_thread_favorite',
+            'callback arguments' => array('status' => variable_get('privatemsg_favorite_tag', 3)),
+            'undo callback' => 'pms_custom_thread_favorite',
+            'undo callback arguments' => array('status' => FALSE),
+        ),
+    );
+}
+
+/**
+ * thread_operations favorite callback
+ * @param $threads
+ * @param null $tag_ids
+ * @param $account
+ */
+function pms_custom_thread_favorite($threads, $tag_ids = NULL, $account) {
+    privatemsg_filter_add_tags($threads, $tag_ids, $account);
+}
+
+/**
+ * Redirect after dropdown select
+ * @param $form
+ * @param $form_state
+ */
+function pms_custom_filter_messages($form, &$form_state) {
+/*
+    $path = 'user/'.$form_state['values']['account']->uid.'/inbox/'.$form_state['values']['before_tabs'];
+    ctools_include('ajax');
+    ctools_add_js('ajax-responder');
+    //$commands[] = ctools_ajax_command_redirect($path);
+    $commands[] = ctools_ajax_render_error('error');
+    print ajax_render($commands);
+    //exit;
+    */
+    //dsm($form_state);
+
+    if (empty($form_state['build_info']['args'][1]->tab)) {
+        $form_state['build_info']['args'][1]->tab = 'event';
+    }
+
+    if (!empty($form_state['clicked_button'])) {
+        $form_state['build_info']['args'][1]->tab = $form_state['clicked_button']['#name'];
+    }
+
+    $form_state['build_info']['args'][0] = $form_state['values']['before_tabs'];
+    $form_state['rebuild'] = TRUE;
+}
+
+/**
+ * AJAX callback to return the form again.
+ */
+function pms_custom_list_js($form, $form_state) {
+    $commands = array();
+    $commands[] = ajax_command_replace('#pmsg-wrapper', render($form));
+    $url = '/user/'.$form_state['values']['account']->uid.'/inbox/'.$form_state['values']['before_tabs'].'/'.$form_state['build_info']['args'][1]->tab;
+
+    $commands[] = ajax_command_invoke(NULL, 'updateBrowserUrl', array(
+        array('url' => $url)
+    ));
+
+    return array('#type' => 'ajax', '#commands' => $commands);
+}
+
+function pms_custom_pmsg_entry_delete($ajax, $thread_id) {
+    $is_ajax = $ajax === 'ajax';
+    global $user;
+    // Since clicking this link updates the database, we used drupal_get_token() for security.
+    if (empty($_GET['tok']) || !drupal_valid_token($_GET['tok'], 'archive_message' . $thread_id)) {
+        return MENU_ACCESS_DENIED;
+    }
+    $commands = array();
+
+    $destination = explode('/', $_GET['destination']);
+
+    $account = user_load($destination[1]);
+    $argument = $destination[3];
+    $tab = $destination[4];
+    $account->tab = $tab;
+
+    $query = _privatemsg_assemble_query(array('tags', 'privatemsg_filter'), $account, array($thread_id));
+    $tags = $query->execute()->fetchCol(1);
+
+    if (count($tags) == 0) {
+        privatemsg_filter_add_tags($thread_id, array(variable_get('privatemsg_filter_inbox_tag')), $account);
+    } else {
+        privatemsg_filter_remove_tags($thread_id, array(variable_get('privatemsg_filter_inbox_tag'), variable_get('privatemsg_favorite_tag')), $account);
+    }
+
+
+    $form = drupal_get_form('pms_custom_list_form', $argument, $account);
+
+    if ($is_ajax) {
+        // Perhaps we could remove the table row we just deleted?
+        //$commands[] = ajax_command_remove('#thread-' . $thread_id);
+        $commands[] = ajax_command_replace('#pmsg-wrapper', render($form));
+
+        return array(
+            '#type' => 'ajax',
+            '#commands' => $commands,
+        );
+    } else {
+        drupal_set_message(t('Archived 1 message'));
+        drupal_goto();
+    }
+}
+
+
+function pms_custom_pmsg_entry_favorite($ajax, $thread_id) {
+    $is_ajax = $ajax === 'ajax';
+    global $user;
+
+    // Since clicking this link updates the database, we used drupal_get_token() for security.
+    if (empty($_GET['tok']) || !drupal_valid_token($_GET['tok'], 'favorite_message' . $thread_id)) {
+        return MENU_ACCESS_DENIED;
+    }
+
+    $destination = explode('/', $_GET['destination']);
+
+    $account = user_load($destination[1]);
+    $argument = $destination[3];
+    $account->tab = $destination[4];
+
+    $fav_tag = variable_get('privatemsg_favorite_tag', 3);
+
+    $query = _privatemsg_assemble_query(array('tags', 'privatemsg_filter'), $account, array($thread_id));
+    $tags = $query->execute()->fetchCol(1);
+
+    $selector = '#thread-' . $thread_id . ' .thread-action-star a';
+
+    $commands = array();
+
+    if (in_array('Favorite', $tags)) {
+        privatemsg_filter_remove_tags($thread_id, array($fav_tag), $account);
+        $fav_title = t('To Favorites');
+
+        $commands[] = ajax_command_invoke($selector, 'addClass', array('s-empty-heart'));
+    } else {
+        privatemsg_filter_add_tags($thread_id, array($fav_tag), $account);
+        $fav_title = t('In Favorites');
+        $commands[] = ajax_command_invoke($selector, 'removeClass', array('s-empty-heart'));
+    }
+
+    $form = drupal_get_form('pms_custom_list_form', $argument, $account);
+
+    $commands[] = ajax_command_replace('#pmsg-wrapper', drupal_render($form));
+
+    if ($is_ajax) {
+        $commands[] = ajax_command_html($selector, $fav_title);
+
+        return array(
+            '#type' => 'ajax',
+            '#commands' => $commands,
+        );
+    }
+    else {
+        drupal_set_message(t('Message added to favorites'));
+        drupal_goto();
+    }
+}
+
+/**
+ * Helper function to get ava
+ * @param $account
+ * @return string
+ */
+function pms_custom_get_user_ava($account){//dsm($account->picture);
+    if (!empty($account->picture->uri)) {
+        $ava = theme('image_style',
+            array(
+                'style_name' => variable_get('user_picture_style', ''),
+                'path' => $account->picture->uri,
+                'attributes' => array('class' => 'circle-avatar')
+            ));
+
+    } else {
+        $filepath = variable_get('user_picture_default', '');
+        $alt = t("@user's picture", array('@user' => format_username($account)));
+        // If the image does not have a valid Drupal scheme (for eg. HTTP),
+        // don't load image styles.
+        if (module_exists('image') && file_valid_uri($filepath) && $style = variable_get('user_picture_style', '')) {
+            $ava = theme('image_style', array('style_name' => $style, 'path' => $filepath, 'alt' => $alt, 'title' => $alt));
+        } else {
+            $ava = theme('image', array('attributes' => array('class' => 'circle-avatar'), 'path' => $filepath, 'alt' => $alt, 'title' => $alt));
+        }
+    }
+    return $ava;
+}
+
+/**
+ * Implements hook_theme() to add the template definition.
+ **/
+function pms_custom_theme($existing, $type, $theme, $path) {
+    $custom_theme = array();
+    $custom_theme['pms_messages_list'] = array(
+        'render element' => 'rows',
+        'template' => 'pms-list',
+        'path' => drupal_get_path('module', 'pms_custom') . '/templates',
+    );
+
+    return $custom_theme;
+}
+
+/**
+ * Implements hook_preprocess_privatemsg_view()
+ * @param $vars
+ */
+function pms_custom_preprocess_privatemsg_view(&$vars) {
+    drupal_add_css(drupal_get_path('module', 'pms_custom'). '/css/pms.css');
+    $vars['author_picture'] = pms_custom_get_user_ava($vars['message']->author);
+    $vars['message_time_date'] = format_date($vars['message']->timestamp, 'custom', 'H:i, d F Y');
+}
+
+/**
+ * Implements hook_form_FORM_ID_alter().
+ */
+function pms_custom_form_privatemsg_form_reply_alter(&$form, &$form_state, $thread){
+    $form['body']['#format'] = 'plain_text';
+    $form['body']['#title'] = 'Напишите сообщение гиду:';
+    unset($form['reply']);
+    $form['actions']['submit']['#attributes']['class'][] = 'btn';
+}
+
+/**
+ * Implements hook_preprocess_page().
+ */
+function pms_custom_preprocess_page(&$vars) {
+    if (arg(0) == 'messages' && arg(1) == 'view' && is_numeric(arg(2))) {
+        unset($vars['page']['content']['system_main']['tags']);
+    }
+}
+
+/**
+ * Add content to the view thread page.
+ *
+ * @param $content
+ *   Render-able array, contains the thread object in #thread.
+ */
+function pms_custom_privatemsg_view_alter(&$content) {
+    $enquire = load_enquire_by_thread_id($content['#thread']['thread_id']);
+
+    //dsm($enquire, 'enquire');
+
+    $node = node_load($enquire->nid);
+    $account = user_load($content['#thread']['user']->uid);
+    $ava = pms_custom_get_user_ava($account);
+
+    $name_field = $account->field_user_first_name['und'][0]['value'];
+
+
+    $content['messages_header'] = array(
+        '#weight' => -10,
+        '#type' => 'container',
+        '#attributes' => array(
+            'class' => array(
+                'row messages-header',
+            ),
+        ),
+    );
+    $content['messages_header']['left'] = array(
+        '#type' => 'container',
+        '#attributes' => array(
+            'class' => array(
+                'col-md-8',
+            ),
+        ),
+    );
+    $title = field_view_field('node', $node, 'title_field');
+    //dsm($title);
+    $content['messages_header']['left']['title'] = array(
+        '#markup' => render($title),
+        '#prefix' => '<span class="title">',
+        '#suffix' => '</span>'
+    );
+    $content['messages_header']['left']['address'] = array(
+        '#prefix' => '<div class="addressfield">',
+        '#suffix' => '</div>'
+    );
+
+    $content['messages_header']['center'] = array(
+        '#type' => 'container',
+        '#attributes' => array(
+            'class' => array('col-md-1'),
+        ),
+    );
+
+    $content['messages_header']['center']['avatar']['#markup'] = $ava;
+
+    $content['messages_header']['right'] = array(
+        '#type' => 'container',
+        '#attributes' => array(
+            'class' => array('col-md-3'),
+        ),
+    );
+
+    $content['messages_header']['right']['name']['#markup'] = $name_field;
+    $content['messages_header']['right']['name']['#prefix'] = '<span class="a-name">';
+    $content['messages_header']['right']['name']['#suffix'] = '</span><div>Контакты станут доступны после предоплаты экскурсии</div>';
+
+
+    /*
+     debug
+    if (empty($node)) {
+        drupal_set_message('Нет связаной ноды с Thread');
+        $node = node_load(180);
+    }*/
+    //dsm($node, 'node');
+
+    if (!empty($node)) {
+        if ($node->type == 'event') {
+
+            $fields = field_get_items('node', $node, 'field_event_location');
+
+            $field_event_location_1 = field_view_value('node', $node, 'field_event_location', $fields[0], array('type' => 'taxonomy_term_reference_plain'));
+            $field_event_location_2 = field_view_value('node', $node, 'field_event_location', $fields[1], array('type' => 'taxonomy_term_reference_plain'));
+
+            $address = render($field_event_location_1) . ' | ' . render($field_event_location_2) . ' ' . t('district');
+            if(!empty($node->field_event_location_city)) {
+                $field_event_location_city = field_view_field('node', $node, 'field_event_location_city'/*, array('type' => 'taxonomy_term_reference_plain')*/);
+                $address .= ' | ' . render($field_event_location_city);
+            }
+
+            /*
+            if(!empty($node->field_event_location_addrs)):
+                $field_event_location_addrs = field_view_field('node', $node, 'field_event_location_addrs');
+                $address .= ', ' . render($field_event_location_addrs);
+            endif;*/
+
+            /*
+                        field_event_location (Array, 0 elements)
+            field_event_location_addrs (Array, 0 elements)
+            field_event_photos (Array, 0 elements)
+            field_event_place (Array, 0 elements)
+            field_event_poster (Array, 0 elements)
+            field_event_type (Array, 0 elements)
+            field_event_url_fb (Array, 0 elements)
+            field_event_url_vk (Array, 0 elements)
+            field_event_website (Array, 0 elements)
+            field_node_location_city (Array, 0 elements)
+                  */
+
+
+
+             $content['event'] = array(
+                '#weight' => -9,
+                '#type' => 'container',
+                '#attributes' => array(
+                    'class' => array(
+                        'row event-data',
+                    ),
+                ),
+            );
+
+            $content['event']['date'] = array(
+                '#type' => 'container',
+                '#attributes' => array(
+                    'class' => array(
+                        'col-md-2',
+                    ),
+                ),
+            );
+            $content['event']['date'][] = array(
+                '#markup' => '<div class="event-value">' . format_date($enquire->departure, 'custom', 'M j D') .'</div>',
+                '#prefix' => '<span class="event-title">' . t('Event Date') . '</span>'
+            );
+            $content['event']['time'] = array(
+                '#type' => 'container',
+                '#attributes' => array(
+                    'class' => array(
+                        'col-md-2',
+                    ),
+                ),
+            );
+            $content['event']['time'][] = array(
+                '#markup' => '<div class="event-value">' . format_date($enquire->departure, 'custom', 'H:s') . ' '.t('local time'). '</div>',
+                '#prefix' => '<span class="event-title">' . t('Starts') . '</span>'
+            );
+
+            $content['event']['participants'] = array(
+                '#type' => 'container',
+                '#attributes' => array(
+                    'class' => array(
+                        'col-md-2',
+                    ),
+                ),
+            );
+            $content['event']['participants'][] = array(
+                '#markup' => '<div class="event-value">'. ($enquire->adults + $enquire->children) . '</div>',
+                '#prefix' => '<span class="event-title">' . t('Participants') . '</span>'
+            );
+
+            $content['event']['duration'] = array(
+                '#type' => 'container',
+                '#attributes' => array(
+                    'class' => array(
+                        'col-md-2',
+                    ),
+                ),
+            );
+            $content['event']['duration'][] = array(
+                '#markup' => '<div class="event-value">1 час(hardcoded)</div>',
+                '#prefix' => '<span class="event-title">' . t('Duration') . '</span>'
+            );
+            //dsm($node, 'node');
+            //dsm($enquire, 'enquire');
+
+            $content['event']['final_cost'] = array(
+                '#type' => 'container',
+                '#attributes' => array(
+                    'class' => array(
+                        'col-md-2',
+                    ),
+                ),
+            );
+            $cost = field_view_field('node', $node, 'field_event_cost');
+
+            $content['event']['final_cost'][] = array(
+                '#markup' => '<div class="event-value">' . render($cost) . '</div>',
+                '#prefix' => '<span class="event-title">' . t('Final cost') . '</span>'
+            );
+        } else {
+
+            $fields = field_get_items('node', $node, 'field_homestead_location');
+
+            $field_homestead_location_1 = field_view_value('node', $node, 'field_homestead_location', $fields[0], array('type' => 'taxonomy_term_reference_plain'));
+            $field_homestead_location_2 = field_view_value('node', $node, 'field_homestead_location', $fields[1], array('type' => 'taxonomy_term_reference_plain'));
+
+            $address = render($field_homestead_location_1) . ' | ' . render($field_homestead_location_2) . ' ' . t('district');
+            if(!empty($node->field_homestead_location_city)) {
+                $field_homestead_location_city = field_view_field('node', $node, 'field_homestead_location_city'/*, array('type' => 'taxonomy_term_reference_plain')*/);
+                $address .= ' | ' . render($field_homestead_location_city);
+            }
+
+            /*
+            if(!empty($node->field_homesteead_location_addrs)):
+                $field_homesteead_location_addrs = field_view_field('node', $node, 'field_homesteead_location_addrs');
+                $address .= ', ' . render($field_homesteead_location_addrs);
+            endif;*/
+
+            $content['event'] = array(
+                '#weight' => -9,
+                '#type' => 'container',
+                '#attributes' => array(
+                    'class' => array(
+                        'row event-data',
+                    ),
+                ),
+            );
+
+            $content['event']['date'] = array(
+                '#type' => 'container',
+                '#attributes' => array(
+                    'class' => array(
+                        'col-md-2',
+                    ),
+                ),
+            );
+            $content['event']['date'][] = array(
+                '#markup' => '<div class="event-value">'. format_date($enquire->arrival, 'custom', 'D, j F Y') .'</div>',
+                '#prefix' => '<span class="event-title">' . t('Starts') . '</span>'
+            );
+            $content['event']['time'] = array(
+                '#type' => 'container',
+                '#attributes' => array(
+                    'class' => array(
+                        'col-md-2',
+                    ),
+                ),
+            );
+            $content['event']['time'][] = array(
+                '#markup' => '<div class="event-value">'. format_date($enquire->departure, 'custom', 'D, j F Y') .'</div>',
+                '#prefix' => '<span class="event-title">' . t('Ends') . '</span>'
+            );
+
+            $content['event']['participants'] = array(
+                '#type' => 'container',
+                '#attributes' => array(
+                    'class' => array(
+                        'col-md-2',
+                    ),
+                ),
+            );
+            $content['event']['participants'][] = array(
+                '#markup' => '<div class="event-value">'. ($enquire->adults + $enquire->children) . '</div>',
+                '#prefix' => '<span class="event-title">' . t('Guests') . '</span>'
+            );
+
+        }
+        $content['messages_header']['left']['address']['#markup'] = $address;
+
+        if (!empty($content['reply']['blocked'])) {
+            $content['order'] = array(
+                '#weight' => -8,
+                '#type' => 'container',
+                '#attributes' => array(
+                    'class' => array(
+                        'row event-order',
+                    ),
+                ),
+            );
+            $content['order']['box'] = array(
+                '#type' => 'container',
+                '#attributes' => array(
+                    'class' => array(
+                        'col-md-12',
+                    ),
+                ),
+            );
+            $content['order']['box'][] = array(
+                //'#markup' => '<div>Вы можете договориться о других условиях или заказать экскурсию еще раз. Если у вас есть вопросы или замечания, напишите в службу потдержки.</div>',
+                '#markup' => $content['reply']['blocked']['#markup'],
+                //'#prefix' => '<span class="event-title"><b>' . t('Заказ изменен гидом') . '</b></span>'
+            );
+            unset($content['reply']['blocked']);
+        }
+
+
+    }
+
+//dsm($content);
+}

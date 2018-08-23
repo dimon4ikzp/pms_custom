@@ -1,0 +1,217 @@
+.circle-avatar {
+  border-radius: 50%;
+  max-width: 60px;
+}
+
+.messages-header {
+  color: #4e5156;
+  padding: 20px;
+  height: 120px;
+}
+
+.messages-header .title {
+  text-transform: uppercase;
+  color: #3f93c3;
+  font-weight: 600;
+}
+
+.messages-header .addressfield {
+  color: #3f93c3;
+}
+
+.a-name {
+  color: #aaaaaa;
+  font-size: 16px;
+}
+
+#privatemsg-form-reply .form-submit{
+  font-size: 16px;
+  color: #ffffff;
+  background-color: #0b8f00;
+  text-transform: uppercase;
+  border-radius: 3px;
+}
+
+#privatemsg-form-reply .form-actions  {
+  margin: 20px 0 30px 0;
+}
+
+.event-data {
+  background-color: #d9e6ee;
+  color: #4e5156;
+  padding: 20px;
+  line-height: 40px;
+  height: 120px;
+}
+
+.event-data > div {
+  font-size: 16px;
+  border-right: 1px #c3cfd7 solid;
+}
+
+.event-order {
+  background-color: #f5f4d2;
+  color: #4e5156;
+  padding: 20px;
+  line-height: 40px;
+  height: 120px;
+  font-weight: 600;
+}
+
+.event-value {
+  font-weight: 600;
+}
+
+div.privatemsg-message-participants {
+  color: #4e5156;
+  text-transform: uppercase;
+  border: none;
+  margin: 40px 10px 10px;
+}
+
+#privatemsg-form-reply label {
+  color: #4e5156;
+}
+
+#privatemsg-form-reply textarea {
+  border-color: #e1e1e1;
+  background-color: #f0f0f0;
+  border-radius: 4px;
+  margin-bottom: 20px;
+}
+
+.pmsg-form div.horizontal-tabs {
+  border: none;
+}
+
+.pmsg-form .form-type-select {
+  float: right;
+  position: relative;
+  z-index: 1;
+  margin: 0;
+}
+
+@media (min-width:767px) {
+  .pmsg-form .thread .row .thread-action {
+    display: none;
+  }
+}
+
+@media (max-width:767px) {
+  .pmsg-form .thread-action a > div {
+    font-size: 0;
+  }
+}
+
+.pmsg-form .thread .row:hover .thread-action {
+  display: block;
+}
+
+.pmsg-form .thread .row:hover .thread-action {
+  display: block;
+}
+
+.pmsg-form .thread .row .thread-action a::before {
+  /*font-size: 14px;*/
+}
+
+/*
+div.horizontal-tabs fieldset.horizontal-tabs-pane {
+  padding: 0;
+  border: 0;
+  width: 100%;
+}
+
+div.horizontal-tabs ul.horizontal-tabs-list {
+  border: none;
+  background: none;
+  margin-bottom: -4px;
+  width: auto;
+}
+
+div.horizontal-tabs ul.horizontal-tabs-list li.horizontal-tab-button  {
+  border: none;
+  padding: 0;
+  background: none;
+  margin-bottom: -1px;
+}
+
+div.horizontal-tabs ul.horizontal-tabs-list li.horizontal-tab-button a {
+  border: none;
+  border-bottom: 4px solid transparent;
+  padding: 13px 0;
+  background: none;
+  margin-right: 35px;
+  text-transform: uppercase;
+  color: #4e5156;
+}
+
+div.horizontal-tabs ul.horizontal-tabs-list li.horizontal-tab-button.selected a {
+  border-bottom: 4px solid #3e8ab7;
+  color: #4e5156;
+}
+
+div.horizontal-tabs ul.horizontal-tabs-list li.horizontal-tab-button.selected strong {
+  color: #4e5156;
+}
+
+div.horizontal-tabs ul.horizontal-tabs-list li.horizontal-tab-button.selected a {
+  border-bottom: 4px solid #3e8ab7;
+  color: #4e5156;
+}
+*/
+
+.msg-tabs-container {
+  border: none;
+  /*border-bottom: 1px solid #e4e4e4;*/
+  background: none;
+  margin-bottom: -1px;
+  width: auto;
+}
+
+.msg-tabs-container > input {
+  border: none;
+  border-bottom: 4px solid transparent;
+  padding: 13px 0;
+  background: none;
+  margin-right: 35px;
+  text-transform: uppercase;
+  color: #4e5156;
+  font-weight: 600;
+}
+
+.msg-tabs-container > input.active {
+  border-bottom: 4px solid #3e8ab7;
+  color: #4e5156;
+}
+
+.page-user-messages .account .tab-content {
+  padding: 25px 64px;
+  margin: 0;
+  border: none;
+}
+
+.thread {
+  padding: 40px 0;
+  border-top: 1px solid #e4e4e4;
+}
+.thread__listing {
+  color: #3f93c3;
+}
+
+.before-tabs {
+  padding: 0 10px;
+}
+
+.thread-action a div {
+  display: inline;
+}
+
+.thread-action-star a.s-empty-heart::before {
+  text-shadow: 0 0 2px #0861a0;
+  color: #fff;
+}
+
+.without-tabs .thread:first-child {
+  border: none;
+}
